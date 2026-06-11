@@ -17,7 +17,7 @@ pip install -r requirements.txt
 py src/main.py
 
 # 程序打包
-pyinstaller -F -w src/main.py
+pyinstaller -F -w --add-data "lib;lib" src/main.py
 
 
 ```
