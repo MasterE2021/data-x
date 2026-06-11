@@ -1,6 +1,5 @@
 import sys
-import os  # 引入 os 库，用于处理路径
-import duckdb
+from db_manager import DuckDBManager
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QTableView, QFileDialog, QMessageBox
@@ -12,44 +11,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # 在程序启动时，立刻在后台加载并初始化 DuckDB 连接
-        self.conn = duckdb.connect()
+        # 通过独立的类初始化 DuckDB 逻辑块
+        self.db_manager = DuckDBManager()
 
-        # --- 离线插件加载逻辑 ---
-        # 定义需要加载的离线插件名称数组
-        required_extensions = ["excel.duckdb_extension", "postgres_scanner.duckdb_extension"]
+        # 调用专门的界面布局函数搭建 GUI 结构，与交互函数实现物理分离
+        self.init_ui()
 
-        # 完美兼容脚本和单文件 exe：如果是 exe 则直接用官方解压根目录 sys._MEIPASS，否则用脚本向上推导的根目录
-        root_dir = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))
-        ext_dir = os.path.join(root_dir, "lib")
-
-        # 循环遍历数组，强制检查并加载每一个插件
-        for ext_name in required_extensions:
-            # 拼接出当前插件的绝对路径
-            ext_path = os.path.join(ext_dir, ext_name)
-
-            # 如果文件里面没有找到插件文件，直接抛出异常报错，中断程序
-            if not os.path.exists(ext_path):
-                raise FileNotFoundError(f"缺少关键离线插件文件: '{ext_name}'，路径应为: '{ext_path}'")
-
-            # 修复 Python 3.11 下 f-string 内不能含反斜杠的问题
-            safe_path = ext_path.replace('\\', '/')
-            # 显式使用 LOAD 语法加载特定路径下的插件
-            self.conn.query(f"load '{safe_path}'")
-        # ------------------------
-
-        # --- 检查 DuckDB 已成功加载的插件逻辑 ---
-        # 查询系统元数据表 duckdb_extensions()，筛选出 loaded 为 true 的插件名称
-        check_sql = "select extension_name from duckdb_extensions() where loaded = true"
-
-        loaded_ext = self.conn.query(check_sql).fetchall()
-        # 将查询结果（元组列表）平铺转换为纯文本列表
-        loaded_extensions = [row[0] for row in loaded_ext]
-        # 在控制台打印出来，方便开发和调试时确认状态
-        print(f"--- DuckDB 离线初始化成功！当前已成功加载的插件列表: {loaded_extensions} ---")
-        # ------------------------
-
+    def init_ui(self):
+        """专门负责 GUI 的控件声明、样式调整和布局组装（方便时常微调界面）"""
         # 创建主窗口
         self.setWindowTitle("CSV 导入工具")
         self.resize(900, 600)
@@ -74,6 +43,7 @@ class MainWindow(QMainWindow):
         self.table_view.setModel(self.model)
 
     def read_data(self):
+        """专门负责业务逻辑交互：弹出对话框、调用 DuckDB 读取数据并填充网格"""
         # 弹出文件选择对话框，限制只能选择指定后缀的文件
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -88,7 +58,7 @@ class MainWindow(QMainWindow):
 
         try:
             # 使用启动时就已经加载好的 DuckDB 连接查询并读取选中的文件
-            rel = self.conn.query(f"select * from '{file_path}' limit 10000")
+            rel = self.db_manager.query(f"select * from '{file_path}' limit 10000")
 
             # 获取表头（列名）与行数据
             columns = rel.columns
@@ -99,7 +69,7 @@ class MainWindow(QMainWindow):
             self.model.setHorizontalHeaderLabels(columns)
 
             for row in result:
-                # DuckDB 返回的每行是 tuple，需转换为字符串列表
+                # DuckDB 返回的每行 is tuple，需转换为字符串列表
                 row_str = [str(item) if item is not None else "" for item in row]
 
                 # 将每一行数据包装为 QStandardItem 并追加到表格模型中
