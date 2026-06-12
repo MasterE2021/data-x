@@ -7,6 +7,29 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QFont
 
 
+class CustomTableView(QTableView):
+    """自定义表格视图，单次只滚动 1 行"""
+
+    def wheelEvent(self, event):
+        # 获取滚轮滚动的角度变化
+        delta = event.angleDelta().y()
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+
+        # 获取垂直滚动条
+        v_scrollbar = self.verticalScrollBar()
+
+        # delta > 0 代表向上滚动，滚动条值减少；delta < 0 代表向下滚动，滚动条值增加
+        if delta > 0:
+            v_scrollbar.setValue(v_scrollbar.value() - 1)
+        else:
+            v_scrollbar.setValue(v_scrollbar.value() + 1)
+
+        # 接受并消耗掉该事件，阻止它继续向上传递导致滚动 3 行
+        event.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -34,8 +57,12 @@ class MainWindow(QMainWindow):
         self.btn.clicked.connect(self.read_data)  # 绑定点击事件
         layout.addWidget(self.btn)
 
-        # 创建类似 Excel 的网格视图
-        self.table_view = QTableView()
+        # 自定义的表格视图 ===
+        self.table_view = CustomTableView()
+
+        # 按项滚动 (ScrollPerItem)
+        self.table_view.setVerticalScrollMode(QTableView.ScrollPerItem)
+
         layout.addWidget(self.table_view)
 
         # 创建数据模型并绑定到网格视图
@@ -58,7 +85,7 @@ class MainWindow(QMainWindow):
 
         try:
             # 使用启动时就已经加载好的 DuckDB 连接查询并读取选中的文件
-            rel = self.db_manager.query(f"select * from '{file_path}' limit 10000")
+            rel = self.db_manager.query(f"select * from '{file_path}' limit 1000")
 
             # 获取表头（列名）与行数据
             columns = rel.columns
