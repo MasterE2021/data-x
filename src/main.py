@@ -2,13 +2,43 @@ import sys
 from db_manager import DuckDBManager
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QPushButton, QTableView, QFileDialog, QMessageBox
+    QPushButton, QTableView, QFileDialog, QMessageBox,
+    QScrollBar, QStyleOptionSlider, QStyle
 )
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QFont
 
 
+class CustomScrollBar(QScrollBar):
+    """自定义垂直滚动条，只要鼠标左键不松，移动多远都不会丢失控制"""
+
+    def mouseMoveEvent(self, event):
+        # 只有在鼠标左键按住拖拽时才进行强制拦截
+        if event.buttons() & Qt.LeftButton:
+            opt = QStyleOptionSlider()
+            self.initStyleOption(opt)
+
+            # 获取滚动条滑块的有效滑动槽长度（总长度减去滑块自身长度）
+            slider_length = self.style().pixelMetric(QStyle.PM_SliderLength, opt, self)
+            bar_length = self.rect().height()
+            valid_length = bar_length - slider_length
+
+            if valid_length > 0:
+                # 获取鼠标当前相对于滚动条顶部的 Y 坐标（并限制在滚动条范围内）
+                mouse_y = max(0, min(event.position().y() - slider_length / 2, valid_length))
+
+                # 计算对应的滚动条数值位置
+                new_value = self.minimum() + (mouse_y / valid_length) * (self.maximum() - self.minimum())
+                self.setValue(int(new_value))
+                event.accept()
+                return
+
+        # 其他情况（如未按左键或普通滑过）交由父类处理
+        super().mouseMoveEvent(event)
+
+
 class CustomTableView(QTableView):
-    """自定义表格视图，单次只滚动 1 行"""
+    """自定义表格视图，彻底锁定滚轮单次只滚动 1 行"""
 
     def wheelEvent(self, event):
         # 获取滚轮滚动的角度变化
@@ -57,11 +87,15 @@ class MainWindow(QMainWindow):
         self.btn.clicked.connect(self.read_data)  # 绑定点击事件
         layout.addWidget(self.btn)
 
-        # 自定义的表格视图 ===
+        # === 修改这里：使用自定义的表格视图 ===
         self.table_view = CustomTableView()
 
         # 按项滚动 (ScrollPerItem)
         self.table_view.setVerticalScrollMode(QTableView.ScrollPerItem)
+
+        # === 核心修改：为表格注入无视距离的自定义垂直滚动条 ===
+        self.custom_scrollbar = CustomScrollBar(Qt.Vertical)
+        self.table_view.setVerticalScrollBar(self.custom_scrollbar)
 
         layout.addWidget(self.table_view)
 
