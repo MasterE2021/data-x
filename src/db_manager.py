@@ -1,5 +1,7 @@
+# db_manager.py
+
 import sys
-import os  # 引入 os 库，用于处理路径
+import os
 import duckdb
 
 
