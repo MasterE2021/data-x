@@ -10,16 +10,12 @@ from PySide6.QtWidgets import (
 
 
 class MainWindow(QMainWindow):
-    """主窗口：负责页面调度、数据加载和文件记录管理。
-    首页为文件管理页，次页为表格浏览页。"""
+    """主窗口：负责页面调度、数据加载和文件记录管理。"""
 
     def __init__(self):
         super().__init__()
-
-        # 数据查询引擎（DuckDB 内存模式）
         self.db_manager = DuckDBManager()
 
-        # 持久化路径管理（SQLite 文件模式）
         data_dir = os.path.join(os.path.expanduser("~"), ".data-x")
         os.makedirs(data_dir, exist_ok=True)
         db_path = os.path.join(data_dir, "dx-file.data")
@@ -41,7 +37,6 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.home_page)  # index 0
         self.stack.addWidget(self.data_page)  # index 1
 
-        # 信号连接
         self.home_page.import_requested.connect(self.on_import_requested)
         self.home_page.file_selected.connect(self.on_file_selected)
         self.data_page.back_requested.connect(self.on_back_requested)
@@ -49,7 +44,7 @@ class MainWindow(QMainWindow):
         self.home_page.set_file_list(self.file_list)
 
     def on_import_requested(self):
-        """处理导入新数据（支持多选），仅记录到首页而不立即加载。"""
+        """处理导入新数据（多选），仅记录到首页。"""
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
             "请选择数据文件（可多选）",
@@ -65,17 +60,20 @@ class MainWindow(QMainWindow):
         self.home_page.set_file_list(self.file_list)
 
     def on_file_selected(self, path):
-        """用户点击首页文件按钮后，加载数据并切换到数据浏览页。"""
+        """用户点击首页文件按钮后，加载全表数据并切换到数据浏览页。"""
         try:
-            rel = self.db_manager.query(f"select * from '{path}' limit 1000")
+            start_time = __import__('time').time()
+            # 不再限制行数，直接加载全表
+            rel = self.db_manager.query(f"SELECT * FROM '{path}'")
             columns = rel.columns
             rows = rel.fetchall()
+            elapsed = (__import__('time').time() - start_time) * 1000  # 毫秒
+
+            self.data_page.display_data(columns, rows, os.path.basename(path), elapsed)
+            self.stack.setCurrentIndex(1)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"读取文件失败:\n{path}\n{e}")
             return
-
-        self.data_page.display_data(columns, rows, os.path.basename(path))
-        self.stack.setCurrentIndex(1)
 
     def on_back_requested(self):
         """返回首页。"""
