@@ -1,7 +1,7 @@
 # ui_manager.py
 
 from PySide6.QtWidgets import QTableView, QWidget, QScrollBar, QStyleOptionSlider, QStyle
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 
 class CursorOverlay(QWidget):
@@ -22,22 +22,22 @@ class CursorOverlay(QWidget):
 
 
 class TableView(QTableView):
-    """自定义表格视图，彻底锁定滚轮单次只滚动 1 行"""
+    """自定义表格视图，游标行独立控制，不依赖垂直滚动条"""
+
+    # 信号：游标行发生变化（row 是新行号）
+    cursor_row_changed = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         # 强制按行(Item)滚动，以保障游标对齐绝对准确
         self.setVerticalScrollMode(QTableView.ScrollPerItem)
         self.setSelectionMode(QTableView.NoSelection)
+
+        # 隐藏原生垂直滚动条，因为我们使用外部的游标滑块
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
         self.cursor_overlay = CursorOverlay(self.viewport())
         self.current_cursor_row = 0
-        self.relative_cursor_offset = 0
-        self._wheel_scrolling = False
-
-    def setVerticalScrollBar(self, scrollbar):
-        # 覆写此方法：当外部注入自定义的 RowSlider 时，必须重新绑定信号以监听拖拽
-        super().setVerticalScrollBar(scrollbar)
-        self.verticalScrollBar().valueChanged.connect(self.on_scrollbar_value_changed)
 
     def wheelEvent(self, event):
         model = self.model()
@@ -50,56 +50,31 @@ class TableView(QTableView):
             super().wheelEvent(event)
             return
 
-        # 获取垂直滚动条
-        v_scrollbar = self.verticalScrollBar()
-
-        # delta > 0 代表向上滚动，滚动条值减少；delta < 0 代表向下滚动，滚动条值增加
+        # delta > 0 代表向上滚动，游标上移；delta < 0 代表向下滚动，游标下移
         step = -1 if delta > 0 else 1
         next_row = self.current_cursor_row + step
 
         # 确保游标行不超过数据边界
         if 0 <= next_row < model.rowCount():
-            self._wheel_scrolling = True
             self.current_cursor_row = next_row
 
-            # EnsureVisible 判断：游标在视界内不滚动数据；脱离视界则只滚动刚好1行
+            # 确保游标行在视口中完全可见（若不可见则自动滚动视图）
             self.scrollTo(model.index(next_row, 0), QTableView.EnsureVisible)
             self.update_cursor_position()
 
-            # 滚动完成后，更新游标所在位置相对于视口顶部的“偏移量”
-            top_row = v_scrollbar.value()
-            self.relative_cursor_offset = self.current_cursor_row - top_row
-            self._wheel_scrolling = False
+            # 通知外部滑块更新位置
+            self.cursor_row_changed.emit(next_row)
 
         # 接受并消耗掉该事件，阻止它继续向上传递导致滚动 3 行
         event.accept()
 
-    def on_scrollbar_value_changed(self, value):
-        """当滑块被拖拽时触发，保持游标的相对视界位置，并在触顶/底时吸附"""
-        if self._wheel_scrolling:
-            return  # 如果是由鼠标滚轮(被动)发起的滚动条变化，跳过该处理逻辑
-
+    def set_cursor_row(self, row):
+        """由外部滑块调用，设置游标到指定行并滚动视图使其可见"""
         model = self.model()
-        if not model or model.rowCount() == 0:
+        if not model or row < 0 or row >= model.rowCount():
             return
-
-        max_row = model.rowCount() - 1
-        scrollbar = self.verticalScrollBar()
-
-        # 触顶/触底时的绝对吸附与相对位置重置
-        if value == scrollbar.minimum():
-            # 滑块置顶：游标强制归零，并重置相对偏移为 0（此后拖动将锁定在视口第一行）
-            self.current_cursor_row = 0
-            self.relative_cursor_offset = 0
-        elif value == scrollbar.maximum():
-            # 滑块触底：游标强制到达最后一行，并重置相对偏移（此后拖动将锁定在视口最后一行）
-            self.current_cursor_row = max_row
-            self.relative_cursor_offset = self.current_cursor_row - value
-        else:
-            # 正常拖动期间：严格保持之前的相对视口位置
-            new_cursor_row = value + self.relative_cursor_offset
-            self.current_cursor_row = max(0, min(new_cursor_row, max_row))
-
+        self.current_cursor_row = row
+        self.scrollTo(model.index(row, 0), QTableView.EnsureVisible)
         self.update_cursor_position()
 
     def resizeEvent(self, event):
@@ -132,14 +107,38 @@ class TableView(QTableView):
             self.cursor_overlay.hide()
             return
         self.current_cursor_row = 0
-        self.relative_cursor_offset = 0
-        self.verticalScrollBar().setValue(0)
         self.scrollTo(model.index(0, 0), QTableView.EnsureVisible)
         self.update_cursor_position()
+        self.cursor_row_changed.emit(0)
 
 
 class RowSlider(QScrollBar):
-    """自定义垂直滚动条，只要鼠标左键不松，移动多远都不会丢失控制"""
+    """自定义垂直滚动条，只要鼠标左键不松，移动多远都不会丢失控制，
+    且拖拽起始不会因为点击位置而瞬移。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 记录拖拽时鼠标相对于滑块顶部的偏移量
+        self._drag_offset = 0
+
+    def mousePressEvent(self, event):
+        """按下鼠标时记录相对偏移，避免拖拽起始瞬移"""
+        if event.button() == Qt.LeftButton:
+            opt = QStyleOptionSlider()
+            self.initStyleOption(opt)
+
+            slider_length = self.style().pixelMetric(QStyle.PM_SliderLength, opt, self)
+            bar_length = self.rect().height()
+            valid_length = bar_length - slider_length
+
+            if valid_length > 0:
+                # 当前滑块顶部在滑动槽中的位置
+                slider_top = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) * valid_length
+                # 鼠标在滚动条上的局部 y 坐标
+                mouse_y = event.position().y()
+                # 存储鼠标到滑块顶部的垂直距离
+                self._drag_offset = mouse_y - slider_top
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         # 其他情况（如未按左键或普通滑过）交由父类处理
@@ -157,11 +156,15 @@ class RowSlider(QScrollBar):
         valid_length = bar_length - slider_length
 
         if valid_length > 0:
-            # 获取鼠标当前相对于滚动条顶部的 Y 坐标（并限制在滚动条范围内）
-            mouse_y = max(0, min(event.position().y() - slider_length / 2, valid_length))
+            # 根据鼠标当前位置和初始偏移，反算滑块顶部应处的位置
+            slider_top = event.position().y() - self._drag_offset
+            # 限制滑块顶部在有效范围内
+            slider_top = max(0, min(slider_top, valid_length))
 
-            # 计算对应的滚动条数值位置
-            new_value = self.minimum() + (mouse_y / valid_length) * (self.maximum() - self.minimum())
+            # 计算对应的滑块数值
+            new_value = self.minimum() + (slider_top / valid_length) * (self.maximum() - self.minimum())
             self.setValue(int(new_value))
             event.accept()
             return
+
+        super().mouseMoveEvent(event)
