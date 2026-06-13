@@ -1,7 +1,11 @@
 # ui_manager.py
 
-from PySide6.QtWidgets import QTableView, QWidget, QScrollBar, QStyleOptionSlider, QStyle
+from PySide6.QtWidgets import (
+    QTableView, QWidget, QScrollBar, QStyleOptionSlider, QStyle,
+    QVBoxLayout, QHBoxLayout, QPushButton, QScrollArea, QLabel, QFrame
+)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 
 
 class CursorOverlay(QWidget):
@@ -168,3 +172,160 @@ class RowSlider(QScrollBar):
             return
 
         super().mouseMoveEvent(event)
+
+
+class HomePage(QWidget):
+    """首页：数据表管理页，包含导入按钮和历史文件列表"""
+
+    # 信号：请求导入新文件（多个路径）
+    import_requested = Signal()
+    # 信号：选中历史文件（文件路径）
+    file_selected = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 标题
+        title = QLabel("📂 数据表管理")
+        title.setFont(QFont("Arial", 18, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        # 导入新数据按钮
+        self.btn_import = QPushButton("📁 导入新数据")
+        self.btn_import.setFont(QFont("Arial", 12))
+        self.btn_import.clicked.connect(self.import_requested.emit)
+        layout.addWidget(self.btn_import)
+
+        # 分割线
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(line)
+
+        # 历史文件区域标题
+        self.history_label = QLabel("📋 历史文件")
+        self.history_label.setFont(QFont("Arial", 12, QFont.Bold))
+        layout.addWidget(self.history_label)
+
+        # 滚动区域
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
+        self.scroll_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.scroll_content)
+        layout.addWidget(self.scroll_area)
+
+        # 占位标签（无记录时显示）
+        self.placeholder_label = QLabel("暂无导入记录")
+        self.placeholder_label.setAlignment(Qt.AlignCenter)
+        self.placeholder_label.setStyleSheet("color: gray; font-size: 14px;")
+
+    def set_file_list(self, paths):
+        """根据路径列表刷新首页按钮"""
+        # 清空原有按钮和占位标签
+        for i in reversed(range(self.scroll_layout.count())):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if widget:
+                self.scroll_layout.removeWidget(widget)
+                widget.setParent(None)
+
+        if not paths:
+            self.scroll_layout.addWidget(self.placeholder_label)
+            return
+
+        import os
+        for path in paths:
+            name = os.path.basename(path)
+            btn = QPushButton(f"{name}\n{path}")
+            btn.setFlat(True)
+            btn.setStyleSheet(
+                "QPushButton {"
+                "   text-align: left;"
+                "   padding: 8px;"
+                "   border: 1px solid #ccc;"
+                "   border-radius: 4px;"
+                "   background: #f9f9f9;"
+                "}"
+                "QPushButton:hover {"
+                "   background: #e0f0ff;"
+                "}"
+            )
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setMinimumHeight(50)
+            # 点击按钮时发出选中信号
+            btn.clicked.connect(lambda checked=False, p=path: self.file_selected.emit(p))
+            self.scroll_layout.addWidget(btn)
+
+
+class DataViewPage(QWidget):
+    """数据浏览页面，包含返回按钮、表格和游标滑块"""
+
+    # 信号：请求返回首页
+    back_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 顶部操作栏：返回按钮 + 当前文件名标签
+        top_bar = QHBoxLayout()
+        self.btn_back = QPushButton("← 返回首页")
+        self.btn_back.clicked.connect(self.back_requested.emit)
+        self.current_file_label = QLabel("")
+        self.current_file_label.setFont(QFont("Arial", 10))
+        top_bar.addWidget(self.btn_back)
+        top_bar.addWidget(self.current_file_label)
+        top_bar.addStretch()
+        layout.addLayout(top_bar)
+
+        # 表格与滑块区域
+        h_layout = QHBoxLayout()
+        self.table_view = TableView()
+        self.row_slider = RowSlider()
+        self.row_slider.setOrientation(Qt.Vertical)
+        self.row_slider.setRange(0, 0)
+
+        h_layout.addWidget(self.table_view)
+        h_layout.addWidget(self.row_slider)
+        layout.addLayout(h_layout)
+
+        # 内部信号连接：游标与滑块同步
+        self.table_view.cursor_row_changed.connect(self._on_cursor_row_changed)
+        self.row_slider.valueChanged.connect(self._on_slider_value_changed)
+
+    def _on_cursor_row_changed(self, row):
+        """表格游标移动后，同步滑块的值（屏蔽信号防止递归）"""
+        self.row_slider.blockSignals(True)
+        self.row_slider.setValue(row)
+        self.row_slider.blockSignals(False)
+
+    def _on_slider_value_changed(self, row):
+        """用户拖拽滑块时，将游标移至对应行"""
+        self.table_view.set_cursor_row(row)
+
+    def display_data(self, columns, rows, file_name):
+        """加载数据并显示"""
+        from PySide6.QtGui import QStandardItemModel, QStandardItem
+
+        model = QStandardItemModel()
+        model.setHorizontalHeaderLabels(columns)
+        for row in rows:
+            row_str = [str(item) if item is not None else "" for item in row]
+            row_items = [QStandardItem(item) for item in row_str]
+            model.appendRow(row_items)
+
+        self.table_view.setModel(model)
+
+        max_row = max(0, len(rows) - 1)
+        self.row_slider.setRange(0, max_row)
+        self.table_view.reset_cursor()
+        self.current_file_label.setText(f"当前文件：{file_name}")
