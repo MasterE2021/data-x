@@ -15,23 +15,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # 导入数据按钮
         self.btn = None
-
-        # 表格视图
         self.table_view = None
-
-        # 数据模型
         self.model = None
-
-        # 通过独立的类初始化 DuckDB 逻辑块
         self.db_manager = DuckDBManager()
-
-        # 调用专门的界面布局函数搭建 GUI 结构，与交互函数实现物理分离
         self.init_ui()
 
     def init_ui(self):
-        """专门负责 GUI 的控件声明、样式调整和布局组装（方便时常微调界面）"""
         # 创建主窗口
         self.setWindowTitle("data-x")
         self.resize(900, 600)
@@ -60,8 +50,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.table_view)
 
     def read_data(self):
-        """专门负责业务逻辑交互：弹出对话框、调用 DuckDB 读取数据并填充网格"""
-        # 弹出文件选择对话框，限制只能选择指定后缀的文件
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "请选择数据文件",
@@ -69,38 +57,27 @@ class MainWindow(QMainWindow):
             "Data Files (*.xls *.xlsx *.csv *.parquet)"
         )
 
-        # 如果用户没有选择文件，直接返回
         if not file_path:
             return
 
         try:
-            # 使用启动时就已经加载好的 DuckDB 连接查询并读取选中的文件
             rel = self.db_manager.query(f"select * from '{file_path}' limit 1000")
-
-            # 获取表头（列名）与行数据
             columns = rel.columns
             result = rel.fetchall()
-
-            # 清空网格原有的内容和表头
             self.model.clear()
             self.model.setHorizontalHeaderLabels(columns)
 
             for row in result:
-                # DuckDB 返回的每行 is tuple，需转换为字符串列表
                 row_str = [str(item) if item is not None else "" for item in row]
-
-                # 将每一行数据包装为 QStandardItem 并追加到表格模型中
                 row_items = [QStandardItem(item) for item in row_str]
                 self.model.appendRow(row_items)
 
-            # 数据载入完毕后，初始化游标行状态并让其覆盖在第 1 行
             self.table_view.reset_cursor()
 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"读取文件失败: {e}")
 
 
-# 启动界面
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()

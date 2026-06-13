@@ -29,14 +29,10 @@ class TableView(QTableView):
         # 强制按行(Item)滚动，以保障游标对齐绝对准确
         self.setVerticalScrollMode(QTableView.ScrollPerItem)
         self.setSelectionMode(QTableView.NoSelection)
-
-        # 初始化独立游标行组件，并将其父对象绑定为 viewport (使其只在数据视口内显示)
         self.cursor_overlay = CursorOverlay(self.viewport())
-
-        # 核心状态位
-        self.current_cursor_row = 0  # 游标行所在的绝对行索引
-        self.relative_cursor_offset = 0  # 游标行距离视口顶部第一行的“相对行数”
-        self._wheel_scrolling = False  # 状态锁：区分是滚轮触发的视口变动，还是滑块拖拽触发的变动
+        self.current_cursor_row = 0
+        self.relative_cursor_offset = 0
+        self._wheel_scrolling = False
 
     def setVerticalScrollBar(self, scrollbar):
         # 覆写此方法：当外部注入自定义的 RowSlider 时，必须重新绑定信号以监听拖拽
@@ -58,7 +54,6 @@ class TableView(QTableView):
         v_scrollbar = self.verticalScrollBar()
 
         # delta > 0 代表向上滚动，滚动条值减少；delta < 0 代表向下滚动，滚动条值增加
-        # （结合游标行逻辑：向上滚动游标行减少，向下滚动游标行增加）
         step = -1 if delta > 0 else 1
         next_row = self.current_cursor_row + step
 
@@ -91,7 +86,7 @@ class TableView(QTableView):
         max_row = model.rowCount() - 1
         scrollbar = self.verticalScrollBar()
 
-        # 【修复问题 1】：触顶/触底时的绝对吸附与相对位置重置
+        # 触顶/触底时的绝对吸附与相对位置重置
         if value == scrollbar.minimum():
             # 滑块置顶：游标强制归零，并重置相对偏移为 0（此后拖动将锁定在视口第一行）
             self.current_cursor_row = 0
