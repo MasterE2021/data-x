@@ -1,3 +1,5 @@
+# mian.py
+
 import sys
 from db_manager import DuckDBManager
 from ui_manager import RowSlider

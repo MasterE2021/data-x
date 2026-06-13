@@ -1,5 +1,7 @@
+# ui_manager.py
+
 from PySide6.QtWidgets import QTableView
-from PySide6.QtWidgets import (QScrollBar, QStyleOptionSlider, QStyle, QPushButton)
+from PySide6.QtWidgets import (QScrollBar, QStyleOptionSlider, QStyle)
 from PySide6.QtCore import Qt
 
 
