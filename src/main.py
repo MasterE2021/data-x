@@ -93,6 +93,9 @@ class MainWindow(QMainWindow):
                 row_items = [QStandardItem(item) for item in row_str]
                 self.model.appendRow(row_items)
 
+            # 数据载入完毕后，初始化游标行状态并让其覆盖在第 1 行
+            self.table_view.reset_cursor()
+
         except Exception as e:
             QMessageBox.critical(self, "错误", f"读取文件失败: {e}")
 
