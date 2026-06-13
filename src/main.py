@@ -1,6 +1,7 @@
 # main.py
 
 import sys
+import os
 from db_manager import DuckDBManager
 from ui_manager import RowSlider, TableView
 from PySide6.QtWidgets import (
@@ -50,13 +51,10 @@ class MainWindow(QMainWindow):
             self.db_manager.query(f"INSERT OR IGNORE INTO file_records VALUES ('{path}')")
         except Exception as e:
             print(f"保存记录失败：{e}")
-        # 无论如何都更新内存列表，避免重复可放在前面
-        if path not in self.file_list:
-            self.file_list.insert(0, path)  # 最新的放在最前
-        else:
-            # 移到最前
+        # 更新内存列表，保持最新在前
+        if path in self.file_list:
             self.file_list.remove(path)
-            self.file_list.insert(0, path)
+        self.file_list.insert(0, path)
 
     def init_ui(self):
         self.setWindowTitle("data-x")
@@ -76,7 +74,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignCenter)
         home_layout.addWidget(title)
 
-        # 导入新数据按钮
+        # 导入新数据按钮（支持多选，仅记录不跳转）
         self.btn_import = QPushButton("📁 导入新数据")
         self.btn_import.setFont(QFont("Arial", 12))
         self.btn_import.clicked.connect(self.import_new_file)
@@ -110,7 +108,7 @@ class MainWindow(QMainWindow):
         self.data_page = QWidget()
         data_layout = QVBoxLayout(self.data_page)
 
-        # 顶部操作栏：返回按钮 + 当前文件名标签（可选）
+        # 顶部操作栏：返回按钮 + 当前文件名标签
         top_bar = QHBoxLayout()
         self.btn_back = QPushButton("← 返回首页")
         self.btn_back.clicked.connect(self.go_back_home)
@@ -121,7 +119,7 @@ class MainWindow(QMainWindow):
         top_bar.addStretch()
         data_layout.addLayout(top_bar)
 
-        # 表格与滑块区域（保持原有布局）
+        # 表格与滑块区域
         h_layout = QHBoxLayout()
         self.table_view = TableView()
         self.row_slider = RowSlider()
@@ -136,7 +134,7 @@ class MainWindow(QMainWindow):
         self.model = QStandardItemModel()
         self.table_view.setModel(self.model)
 
-        # 信号连接（只连接一次）
+        # 信号连接
         self.table_view.cursor_row_changed.connect(self._on_cursor_row_changed)
         self.row_slider.valueChanged.connect(self._on_slider_value_changed)
 
@@ -144,7 +142,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.home_page)  # index 0
         self.stack.addWidget(self.data_page)  # index 1
 
-        # 刷新首页按钮（根据file_list）
+        # 刷新首页按钮
         self.refresh_home_buttons()
 
     def refresh_home_buttons(self):
@@ -162,8 +160,6 @@ class MainWindow(QMainWindow):
 
         # 为每个文件创建一个带样式的按钮
         for path in self.file_list:
-            # 提取文件名
-            import os
             name = os.path.basename(path)
             btn = QPushButton(f"{name}\n{path}")
             btn.setFlat(True)
@@ -181,29 +177,28 @@ class MainWindow(QMainWindow):
             )
             btn.setCursor(Qt.PointingHandCursor)
             btn.setMinimumHeight(50)
-            # 点击按钮加载对应文件
+            # 点击按钮加载对应文件并跳转到数据页
             btn.clicked.connect(lambda checked=False, p=path: self.load_existing_file(p))
             self.scroll_layout.addWidget(btn)
 
     def import_new_file(self):
-        """打开文件对话框导入新数据"""
-        file_path, _ = QFileDialog.getOpenFileName(
+        """导入新文件（仅记录到首页，不立即打开）"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "请选择数据文件",
+            "请选择数据文件（可多选）",
             "",
             "Data Files (*.xls *.xlsx *.csv *.parquet)"
         )
-        if not file_path:
+        if not file_paths:
             return
-        # 加载数据并切换到数据页
-        self.load_data_from_file(file_path)
-        # 记录到历史和数据库
-        self._save_record(file_path)
-        # 刷新首页按钮
+
+        for path in file_paths:
+            self._save_record(path)
+
         self.refresh_home_buttons()
 
     def load_existing_file(self, file_path):
-        """加载已有的文件"""
+        """点击首页按钮时加载已有文件"""
         self.load_data_from_file(file_path)
 
     def load_data_from_file(self, file_path):
@@ -213,7 +208,7 @@ class MainWindow(QMainWindow):
             columns = rel.columns
             result = rel.fetchall()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"读取文件失败: {e}")
+            QMessageBox.critical(self, "错误", f"读取文件失败:\n{file_path}\n{e}")
             return
 
         # 填充模型
@@ -230,7 +225,6 @@ class MainWindow(QMainWindow):
         self.table_view.reset_cursor()
 
         # 显示当前文件名
-        import os
         self.current_file_label.setText(f"当前文件：{os.path.basename(file_path)}")
 
         # 切换到数据浏览页
