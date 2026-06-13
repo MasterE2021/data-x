@@ -1,68 +1,26 @@
 import sys
 from db_manager import DuckDBManager
+from ui_manager import RowSlider
+from ui_manager import TableView
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QPushButton, QTableView, QFileDialog, QMessageBox,
-    QScrollBar, QStyleOptionSlider, QStyle
+    QPushButton, QFileDialog, QMessageBox
 )
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QFont
-
-
-class CustomScrollBar(QScrollBar):
-    """自定义垂直滚动条，只要鼠标左键不松，移动多远都不会丢失控制"""
-
-    def mouseMoveEvent(self, event):
-        # 只有在鼠标左键按住拖拽时才进行强制拦截
-        if event.buttons() & Qt.LeftButton:
-            opt = QStyleOptionSlider()
-            self.initStyleOption(opt)
-
-            # 获取滚动条滑块的有效滑动槽长度（总长度减去滑块自身长度）
-            slider_length = self.style().pixelMetric(QStyle.PM_SliderLength, opt, self)
-            bar_length = self.rect().height()
-            valid_length = bar_length - slider_length
-
-            if valid_length > 0:
-                # 获取鼠标当前相对于滚动条顶部的 Y 坐标（并限制在滚动条范围内）
-                mouse_y = max(0, min(event.position().y() - slider_length / 2, valid_length))
-
-                # 计算对应的滚动条数值位置
-                new_value = self.minimum() + (mouse_y / valid_length) * (self.maximum() - self.minimum())
-                self.setValue(int(new_value))
-                event.accept()
-                return
-
-        # 其他情况（如未按左键或普通滑过）交由父类处理
-        super().mouseMoveEvent(event)
-
-
-class CustomTableView(QTableView):
-    """自定义表格视图，彻底锁定滚轮单次只滚动 1 行"""
-
-    def wheelEvent(self, event):
-        # 获取滚轮滚动的角度变化
-        delta = event.angleDelta().y()
-        if delta == 0:
-            super().wheelEvent(event)
-            return
-
-        # 获取垂直滚动条
-        v_scrollbar = self.verticalScrollBar()
-
-        # delta > 0 代表向上滚动，滚动条值减少；delta < 0 代表向下滚动，滚动条值增加
-        if delta > 0:
-            v_scrollbar.setValue(v_scrollbar.value() - 1)
-        else:
-            v_scrollbar.setValue(v_scrollbar.value() + 1)
-
-        # 接受并消耗掉该事件，阻止它继续向上传递导致滚动 3 行
-        event.accept()
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        # 导入数据按钮
+        self.btn = None
+
+        # 表格视图
+        self.table_view = None
+
+        # 数据模型
+        self.model = None
 
         # 通过独立的类初始化 DuckDB 逻辑块
         self.db_manager = DuckDBManager()
@@ -73,7 +31,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """专门负责 GUI 的控件声明、样式调整和布局组装（方便时常微调界面）"""
         # 创建主窗口
-        self.setWindowTitle("CSV 导入工具")
+        self.setWindowTitle("data-x")
         self.resize(900, 600)
 
         # 创建中央部件和垂直布局
@@ -87,21 +45,17 @@ class MainWindow(QMainWindow):
         self.btn.clicked.connect(self.read_data)  # 绑定点击事件
         layout.addWidget(self.btn)
 
-        # === 修改这里：使用自定义的表格视图 ===
-        self.table_view = CustomTableView()
+        # 创建网格视图
+        self.table_view = TableView()
 
-        # 按项滚动 (ScrollPerItem)
-        self.table_view.setVerticalScrollMode(QTableView.ScrollPerItem)
-
-        # === 核心修改：为表格注入无视距离的自定义垂直滚动条 ===
-        self.custom_scrollbar = CustomScrollBar(Qt.Vertical)
-        self.table_view.setVerticalScrollBar(self.custom_scrollbar)
-
-        layout.addWidget(self.table_view)
+        # 设置数据行滑块
+        self.table_view.setVerticalScrollBar(RowSlider())
 
         # 创建数据模型并绑定到网格视图
         self.model = QStandardItemModel()
         self.table_view.setModel(self.model)
+
+        layout.addWidget(self.table_view)
 
     def read_data(self):
         """专门负责业务逻辑交互：弹出对话框、调用 DuckDB 读取数据并填充网格"""
