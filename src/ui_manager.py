@@ -243,7 +243,7 @@ class FilterDialog(QDialog):
 
         btn_layout = QHBoxLayout()
         self.add_btn = QPushButton("＋ 添加条件")
-        self.add_btn.clicked.connect(self.add_condition)
+        self.add_btn.clicked.connect(lambda: self.add_condition())
         btn_layout.addWidget(self.add_btn)
         btn_layout.addStretch()
         self.btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
