@@ -3,7 +3,8 @@
 import sys
 import os
 from db_manager import DuckDBManager, SQLiteManager
-from ui_manager import HomePage, DataViewPage
+from ui_manager import HomePage
+from ui_table_page import DataViewPage
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QFileDialog, QMessageBox
 )
