@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
             self,
             "请选择数据文件（可多选）",
             "",
-            "Data Files (*.xls *.xlsx *.csv *.parquet)"
+            "Data Files (*.xlsx *.csv *.parquet)"
         )
         if not file_paths:
             return

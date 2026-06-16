@@ -157,11 +157,9 @@ class ExportDialog(QDialog):
     FORMATS = {
         "CSV (*.csv)": "csv",
         "Excel (.xlsx)": "xlsx",
-        "Excel 97-2003 (.xls)": "xls",
         "Parquet (*.parquet)": "parquet",
     }
     ROW_LIMITS = {
-        "xls": 65536,
         "xlsx": 1048576,
         "csv": 10000000,
         "parquet": float("inf"),
@@ -499,7 +497,6 @@ class DataViewPage(QWidget):
         fmt_suffix = {
             "csv": ".csv",
             "xlsx": ".xlsx",
-            "xls": ".xls",
             "parquet": ".parquet"
         }
         default_name = f"{base_name}_{time_str}{fmt_suffix.get(fmt, '.csv')}"
@@ -507,7 +504,6 @@ class DataViewPage(QWidget):
         file_filters = {
             "csv": "CSV Files (*.csv)",
             "xlsx": "Excel Files (*.xlsx)",
-            "xls": "Excel Files (*.xls)",
             "parquet": "Parquet Files (*.parquet)",
         }
         file_path, _ = QFileDialog.getSaveFileName(
