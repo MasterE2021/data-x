@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
             rows = rel.fetchall()
             elapsed = (__import__('time').time() - start_time) * 1000  # 毫秒
 
-            self.data_page.display_data(columns, rows, os.path.basename(path), elapsed)
+            self.data_page.display_data(path, columns, rows, os.path.basename(path), elapsed)
             self.stack.setCurrentIndex(1)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"读取文件失败:\n{path}\n{e}")
