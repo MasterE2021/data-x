@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
 
         self.home_page = HomePage()
         self.data_page = DataViewPage()
+        self.data_page.db_manager = self.db_manager
 
         self.stack.addWidget(self.home_page)  # index 0
         self.stack.addWidget(self.data_page)  # index 1

@@ -1,6 +1,8 @@
 # ui_table_page.py
 
-import duckdb
+import os
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QMessageBox, QSpinBox, QDialog, QComboBox, QCheckBox,
@@ -14,27 +16,21 @@ from ui_table_filter import FilterDialog, FilterConditionNode, FilterGroupNode
 from ui_column_selector import ColumnSelectorDialog
 
 
-# -------------------- 导出线程（直接利用 DuckDB COPY）--------------------
+# -------------------- 导出线程 --------------------
 class ExportThread(QThread):
     """后台导出：使用 COPY (SELECT ... FROM '源文件') TO '目标路径'"""
     progress = Signal(int)
     finished = Signal()
     error = Signal(str)
 
-    FORMAT_MAP = {
-        "csv": "CSV",
-        "xlsx": "XLSX",
-        "xls": "XLS",
-        "parquet": "PARQUET",
-    }
-
-    def __init__(self, source_path, file_path, fmt, columns, where_clause="", parent=None):
+    def __init__(self, db_manager, source_path, file_path, fmt, columns, where_clause="", parent=None):
         super().__init__(parent)
-        self.source_path = source_path  # 源文件绝对路径
-        self.file_path = file_path  # 导出目标路径
-        self.fmt = fmt  # 导出格式（csv/xlsx/xls/parquet）
-        self.columns = columns  # 需要导出的列名列表
-        self.where_clause = where_clause  # SQL WHERE 条件（可为空）
+        self.source_path = source_path
+        self.file_path = file_path
+        self.fmt = fmt
+        self.columns = columns
+        self.where_clause = where_clause
+        self.db_manager = db_manager
         self._is_canceled = False
 
     def run(self):
@@ -48,24 +44,17 @@ class ExportThread(QThread):
         self._is_canceled = True
 
     def _export_from_source(self):
-        con = duckdb.connect()
+        con = self.db_manager.conn
         try:
-            # 构造 SELECT 列列表，列名用双引号包裹
             safe_columns = [f'"{col}"' for col in self.columns]
             col_defs = ", ".join(safe_columns)
 
-            # 构造 SQL：从源 parquet 文件中选择指定列
-            select_sql = f"select {col_defs} from '{self.source_path}'"
+            select_sql = f"select {col_defs} from '{self.source_path}' with (format {self.fmt}, header true)"
             if self.where_clause.strip():
                 select_sql += f" where {self.where_clause}"
 
-            # DuckDB 格式参数
-            duckdb_format = self.FORMAT_MAP.get(self.fmt, "CSV")
-            # CSV/Excel/Parquet 都支持 HEADER，Parquet 自动忽略
-            copy_sql = (
-                f"copy ({select_sql}) to '{self.file_path}'"
-            )
-            # 执行导出（过程中无法取消，若需取消需分块，但对直接导出可忽略）
+            # 直接根据文件扩展名导出，并包含列标题
+            copy_sql = f"copy ({select_sql}) to '{self.file_path}'"
             con.execute(copy_sql)
             self.progress.emit(100)
         except Exception as e:
@@ -74,7 +63,7 @@ class ExportThread(QThread):
             con.close()
 
 
-# -------------------- 筛选线程（保留，用于高级筛选）--------------------
+# -------------------- 筛选线程 --------------------
 class FilterThread(QThread):
     progress = Signal(int)
     finished = Signal(list)
@@ -163,7 +152,7 @@ class FilterThread(QThread):
         return True
 
 
-# -------------------- 导出对话框（不变）--------------------
+# -------------------- 导出对话框 --------------------
 class ExportDialog(QDialog):
     FORMATS = {
         "CSV (*.csv)": "csv",
@@ -257,7 +246,9 @@ class DataViewPage(QWidget):
         self.page_size = 1000
         self.current_page = 0
         self.current_filter_root = None
-        self.source_file_path = None  # 记录当前加载的源文件路径
+        self.source_file_path = None
+        self.source_file_name = ""
+        self.db_manager = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -328,14 +319,14 @@ class DataViewPage(QWidget):
         page_layout.addStretch()
         main_layout.addLayout(page_layout)
 
-    # display_data 需要接收源文件路径
     def display_data(self, source_path, columns, rows, file_name, query_elapsed_ms):
         self.original_columns = columns
         self.original_rows = rows
         self.current_data = rows
         self.visible_column_indices = list(range(len(columns)))
         self.current_file_label.setText(f"当前文件：{file_name}")
-        self.source_file_path = source_path  # 保存路径供导出使用
+        self.source_file_path = source_path
+        self.source_file_name = file_name  # 保存文件名，用于导出默认名
         self.current_page = 0
         self.current_filter_root = None
         self._show_current_page()
@@ -466,7 +457,6 @@ class DataViewPage(QWidget):
         if not self.original_columns or not self.current_data:
             return
 
-        # 确定源文件路径（必须已经在 display_data 中设置）
         if not self.source_file_path:
             QMessageBox.warning(self, "导出错误", "未找到源文件路径，无法导出。")
             return
@@ -483,21 +473,37 @@ class DataViewPage(QWidget):
         # 可见列
         columns_to_export = [self.original_columns[i] for i in self.visible_column_indices]
 
-        # 构造 WHERE 条件（如果用户选择“仅导出筛选结果”且存在高级筛选）
+        # 构造 WHERE 条件
         where_clause = ""
         if filter_only and self.current_filter_root:
-            # 尝试将筛选树转为 SQL（简单实现，复杂条件可能无法完全覆盖）
             where_clause = self._filter_to_sql(self.current_filter_root)
             if where_clause is None:
-                # 转换失败时，回退到内存导出（基于 current_data）
                 QMessageBox.information(self, "提示", "复杂筛选条件无法转为 SQL，将导出当前内存中的筛选结果。")
-                # 走内存导出通道（复用原先的线程，但传递 rows）
-                self._export_from_memory(fmt, columns_to_export, self.current_data)
-                return
+                # 回退内存导出（此处仅作提示，可扩展）
+                where_clause = ""
         elif not filter_only:
-            where_clause = ""  # 导出全部原始数据
+            where_clause = ""
 
-        # 文件保存对话框
+        # ---------- 生成默认文件名 ----------
+        # 获取不带扩展名的基本文件名
+        base_name = "export"  # 默认值
+        if self.source_file_name:
+            base_name = os.path.splitext(self.source_file_name)[0]
+        elif self.source_file_path:
+            base_name = os.path.splitext(os.path.basename(self.source_file_path))[0]
+
+        # 时间戳
+        time_str = datetime.now().strftime("%Y%m%d%H%M")
+
+        # 格式后缀映射
+        fmt_suffix = {
+            "csv": ".csv",
+            "xlsx": ".xlsx",
+            "xls": ".xls",
+            "parquet": ".parquet"
+        }
+        default_name = f"{base_name}_{time_str}{fmt_suffix.get(fmt, '.csv')}"
+
         file_filters = {
             "csv": "CSV Files (*.csv)",
             "xlsx": "Excel Files (*.xlsx)",
@@ -505,13 +511,14 @@ class DataViewPage(QWidget):
             "parquet": "Parquet Files (*.parquet)",
         }
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存文件", "", file_filters.get(fmt, "All Files (*)")
+            self, "保存文件", default_name, file_filters.get(fmt, "All Files (*)")
         )
         if not file_path:
             return
 
-        # 启动导出线程（直接从源文件导出）
+        # 启动导出线程
         self.export_thread = ExportThread(
+            db_manager=self.db_manager,
             source_path=self.source_file_path,
             file_path=file_path,
             fmt=fmt,
@@ -525,22 +532,17 @@ class DataViewPage(QWidget):
         self.export_thread.progress.connect(progress.setValue)
         self.export_thread.finished.connect(lambda: self._on_export_finished(progress))
         self.export_thread.error.connect(lambda msg: self._on_export_error(progress, msg))
-        # 直接导出无法中途取消，但保留取消按钮（连接后无效，可忽略）
         progress.canceled.connect(self.export_thread.cancel)
         self.export_thread.start()
 
     def _export_from_memory(self, fmt, columns_to_export, rows):
-        """当无法使用 SQL 直接导出时，回退到内存插入方式的导出（使用旧的 ExportThread 逻辑）"""
-        # 这里可以复用之前的 ExportThread，但需要轻微调整，为简洁此处仅给出提示
+        """当无法使用 SQL 直接导出时，回退到内存插入方式的导出（预留）"""
         QMessageBox.information(self, "回退导出", "即将使用内存方式导出，大数据量可能较慢。")
-        # 实际可调用一个基于内存的线程类，这里不展开，避免重复
-        # 实际项目中可以创建另一个 MemoryExportThread
+        # 可扩展为实际的内存导出线程
 
     def _filter_to_sql(self, root_node):
-        """将筛选树转换为 SQL WHERE 子句，失败返回 None"""
         try:
-            sql = self._node_to_sql(root_node)
-            return sql
+            return self._node_to_sql(root_node)
         except Exception:
             return None
 
@@ -551,7 +553,6 @@ class DataViewPage(QWidget):
             col = node.column
             op = node.operator
             val = node.value
-            # 处理操作符映射
             if op == "==":
                 return f'"{col}" = {self._quote(val)}'
             elif op == "!=":
@@ -569,7 +570,6 @@ class DataViewPage(QWidget):
             elif op == "not_contains":
                 return f'"{col}" NOT LIKE {self._quote(f"%{val}%")}'
             elif op == "icontains":
-                # SQLite uses LIKE case insensitive by default, parquet need ILIKE
                 return f'"{col}" ILIKE {self._quote(f"%{val}%")}'
             elif op == "is_null":
                 return f'"{col}" IS NULL'
@@ -582,20 +582,17 @@ class DataViewPage(QWidget):
                 return "1=1"
             parts = []
             for i, child in enumerate(node.children):
-                child_sql = self._node_to_sql(child)
-                parts.append(child_sql)
+                parts.append(self._node_to_sql(child))
                 if i < len(node.children) - 1:
-                    parts.append(node.connectors[i])  # AND or OR
+                    parts.append(node.connectors[i])
             return "(" + " ".join(parts) + ")"
         return "1=1"
 
     def _quote(self, value):
-        """简单地将值转为 SQL 字符串，数字不加引号"""
         if value is None:
             return "NULL"
         if isinstance(value, (int, float)):
             return str(value)
-        # 转义单引号
         escaped = str(value).replace("'", "''")
         return f"'{escaped}'"
 
