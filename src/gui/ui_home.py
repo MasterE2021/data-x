@@ -133,6 +133,16 @@ class CustomTitleBar(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event):
         self.drag_pos = None
 
+    def mouseDoubleClickEvent(self, event):
+        """双击标题栏空白区域：最大化/窗口化切换"""
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            # 判断是否点在按钮上，避免按钮双击触发窗口切换
+            pos = event.position().toPoint()
+            child = self.childAt(pos)
+            if child is None or child is self.title_label:
+                self.toggle_maximize()
+        super().mouseDoubleClickEvent(event)
+
 
 class MainWindow(QtWidgets.QWidget):
     """无边框主窗口，四周边缘可调整大小"""
