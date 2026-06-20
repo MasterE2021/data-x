@@ -1,3 +1,8 @@
+# python 打包工具
 pyinstaller==6.20.0
+
+# 内存列式数据库
 duckdb==1.4.1.0
+
+# python GUI框架
 PySide6==6.11.1
