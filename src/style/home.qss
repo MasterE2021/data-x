@@ -1,0 +1,25 @@
+/* 主窗口背景 */
+#CentralWidget {
+    background-color: #ECE1E1;
+    border: 0px solid #dcdcdc;
+}
+
+#ActionSpace {
+    background-color:  #AC6588;
+    border: 0px;
+}
+
+#StateSpace {
+    background-color:  #ffffff;
+    border: 0px;
+}
+
+#ToolBar {
+    background-color:  #ABABA8;
+    border: 0px;
+}
+
+#WorkSpace {
+    background-color:  #1D4747;
+    border: 0px;
+}
