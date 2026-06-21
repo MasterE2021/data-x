@@ -1,21 +1,25 @@
-import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout
+import os
+
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from PySide6 import QtCore
 from src.manager.manager_qss import QSSManager
-from space_state import StateSpace
-from space_action import ActionSpace
+from src.manager.manager_db import DuckDBManager, SQLiteManager
+from src.gui.space_state import StateSpace
+from src.gui.space_action import ActionSpace
 
 
 class HomePage(QMainWindow):
-    def __init__(self):
+    def __init__(self, root_dir: str):
         super().__init__()
         self.resize(900, 600)  # 初始化窗口大小
+        self.root_dir = root_dir
 
         # 1. 初始化 UI 组件
         self._init_ui()
 
         # 2. 初始化 QSS 样式
         self._init_style()
+        self._init_db()
 
     def _init_ui(self):
         """分离 UI 构建逻辑，保持代码结构清晰"""
@@ -33,16 +37,17 @@ class HomePage(QMainWindow):
 
     def _init_style(self):
         """配置并应用 QSS 样式"""
-        self.qss_manager = QSSManager([
-            "../style/space.qss",
-            "../style/button.qss",
-        ])
+        self.qss_manager = QSSManager(self.root_dir)
         self.qss_manager.styleChanged.connect(self.setStyleSheet)  # 直接连接：Qt的信号可以直接连接到内置槽函数，省去了 apply_style 这个包装函数
         self.setStyleSheet(self.qss_manager.load())  # 首次加载：直接调用 setStyleSheet
 
+    def _init_db(self):
+        # 初始化内存数据库duckdb
+        self.db_manager = DuckDBManager(self.root_dir)
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    home_page = HomePage()
-    home_page.show()
-    sys.exit(app.exec())
+        # 初始化用户数据库sqlite
+        data_dir = os.path.join(os.path.expanduser("~"), ".data-x")
+        os.makedirs(data_dir, exist_ok=True)
+        db_path = os.path.join(data_dir, "dx-file.data")
+        self.db_sqlite = SQLiteManager(db_path)
+        self.file_list = self.db_sqlite.get_records()

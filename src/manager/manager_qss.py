@@ -1,5 +1,6 @@
 from PySide6 import QtCore
 from pathlib import Path
+import os
 
 
 # 动态加载qss
@@ -7,10 +8,14 @@ class QSSManager(QtCore.QObject):
     """QSS 动态加载管理器"""
     styleChanged = QtCore.Signal(str)
 
-    def __init__(self, file_paths: list[str]):
+    def __init__(self, root_dir: str):
         super().__init__()
+        qss_list = ["button.qss", "space.qss"]
+
+        ext_dir = os.path.join(root_dir, "style")
+
         # 1. 转换为绝对路径，避免由于工作目录变动导致找不到文件
-        self.files = [Path(f).resolve() for f in file_paths]
+        self.files = [Path(os.path.join(ext_dir, qss_name)).resolve() for qss_name in qss_list]
         self.watcher = QtCore.QFileSystemWatcher(self)
 
         # 2. 初始化监听
