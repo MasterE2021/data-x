@@ -34,7 +34,8 @@ class HomePage(QMainWindow):
     def _init_style(self):
         """配置并应用 QSS 样式"""
         self.qss_manager = QSSManager([
-            "../style/home.qss",
+            "../style/space.qss",
+            "../style/button.qss",
         ])
         self.qss_manager.styleChanged.connect(self.setStyleSheet)  # 直接连接：Qt的信号可以直接连接到内置槽函数，省去了 apply_style 这个包装函数
         self.setStyleSheet(self.qss_manager.load())  # 首次加载：直接调用 setStyleSheet

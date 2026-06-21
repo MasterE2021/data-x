@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import QWidget, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton
 from PySide6 import QtCore
+from space_work import WorkSpace
 
 
 class ActionSpace(QWidget):
@@ -12,14 +13,47 @@ class ActionSpace(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        toolBar = QWidget()
-        toolBar.setObjectName("ToolBar")
-        toolBar.setFixedWidth(30)
-        toolBar.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        layout.addWidget(ToolBar(), 0)
+        layout.addWidget(WorkSpace(), 1)
 
-        work_space = QWidget()
-        work_space.setObjectName("WorkSpace")
-        work_space.setAttribute(QtCore.Qt.WA_StyledBackground, True)
 
-        layout.addWidget(toolBar, 0)
-        layout.addWidget(work_space, 1)
+class ToolBar(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("ToolBar")
+        self.setFixedWidth(40)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 按钮支撑组件
+        spacer = QWidget()
+        spacer.setSizePolicy(spacer.sizePolicy().Policy.Expanding, spacer.sizePolicy().Policy.Preferred)
+
+        layout.addWidget(FileButton())
+        layout.addWidget(ExecButton())
+        layout.addWidget(ExportButton())
+        layout.addWidget(spacer)
+
+
+class FileButton(QPushButton):
+    def __init__(self):
+        super().__init__()
+        self.setText("文件")
+        self.setObjectName("FileButton")
+
+
+class ExecButton(QPushButton):
+    def __init__(self):
+        super().__init__()
+        self.setText("执行")
+        self.setObjectName("ExecButton")
+
+
+class ExportButton(QPushButton):
+    def __init__(self):
+        super().__init__()
+        self.setText("导出")
+        self.setObjectName("ExportButton")

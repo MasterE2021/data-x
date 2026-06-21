@@ -1,0 +1,12 @@
+#FileButton, ExecButton, ExportButton{
+    border: none;
+    height: 40px;
+}
+
+#FileButton:hover, ExecButton:hover, ExportButton:hover {
+    background-color: #8ABD8E;
+}
+
+#FileButton:pressed, ExecButton:pressed, ExportButton:pressed {
+    background-color: #594F83;
+}
